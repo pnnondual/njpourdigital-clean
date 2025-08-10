@@ -1,7 +1,8 @@
 {
   "name": "NJ Pour Digital",
   "short_name": "NJP Digital",
-  "start_url": "/njpourdigital-clean/index.html",
+  "start_url": "/njpourdigital-clean/",
+  "scope": "/njpourdigital-clean/",
   "display": "standalone",
   "background_color": "#0a2540",
   "theme_color": "#0a2540",
