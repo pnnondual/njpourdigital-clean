@@ -117,5 +117,15 @@
       <script>document.getElementById('y').textContent=new Date().getFullYear()</script>
     </footer>
   </div>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/njpourdigital-clean/sw.js')
+    .then(reg => console.log("SW registered", reg))
+    .catch(err => console.error("SW registration failed", err));
+}
+</script>
+<link rel="manifest" href="/njpourdigital-clean/manifest.webmanifest">
+
+
 </body>
 </html>
