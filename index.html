@@ -7,12 +7,31 @@
   <meta name="theme-color" content="#0a2540" />
   <link rel="icon" href="https://i.ibb.co/RkBKfX4m/logo-square.png" />
   <link rel="apple-touch-icon" href="/njpourdigital-clean/icon-192.png" />
-  <!-- The ONLY manifest link -->
   <link rel="manifest" href="/njpourdigital-clean/manifest.webmanifest">
+
+  <!-- INLINE CSS so we don't rely on any external stylesheet -->
   <style>
-    /* keep whatever page styles you had here */
+    :root { --brand:#0d1f3c; --brand2:#0b1a33; --gold:#d4af37; }
+    *{box-sizing:border-box} html,body{margin:0;padding:0}
+    body{min-height:100vh;font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#fff;background:
+      radial-gradient(1200px 600px at 70% 10%, rgba(255,255,255,.08), transparent 55%),
+      linear-gradient(180deg, var(--brand) 0%, var(--brand2) 100%)}
+    .wrap{max-width:1120px;margin:0 auto;padding:24px}
+    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+    nav a{color:rgba(255,255,255,.85);text-decoration:none;margin-left:20px} nav a:hover{color:#fff}
+    .btn{display:inline-block;background:var(--gold);color:#000;padding:12px 18px;border-radius:12px;font-weight:700;text-decoration:none}
+    .btn-ghost{display:inline-block;border:1px solid rgba(255,255,255,.3);color:#fff;padding:12px 18px;border-radius:12px;font-weight:700;text-decoration:none}
+    .row{display:grid;gap:40px;grid-template-columns:1fr} @media(min-width:900px){.row{grid-template-columns:1fr 1fr}}
+    .card{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:18px}
+    .muted{color:rgba(255,255,255,.75)} .grid{display:grid;gap:16px}
+    .grid4{grid-template-columns:repeat(1,1fr)} @media(min-width:700px){.grid4{grid-template-columns:repeat(2,1fr)}} @media(min-width:1000px){.grid4{grid-template-columns:repeat(4,1fr)}}
+    h1{margin:0 0 8px 0;font-size:40px;line-height:1.2} h2{margin:0 0 12px 0;font-size:28px}
+    input,textarea{width:100%;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.25);background:#fff;color:#000}
+    footer{color:rgba(255,255,255,.7);font-size:14px;padding:24px 0}
+    img.brand{width:100%;max-width:520px;border-radius:18px;border:1px solid rgba(255,255,255,.12);box-shadow:0 20px 60px rgba(0,0,0,.35)}
   </style>
 </head>
+
 
 <body>
   <div class="wrap">
