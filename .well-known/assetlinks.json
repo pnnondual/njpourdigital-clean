@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.njpourdigital.app.twa",
+      "sha256_cert_fingerprints": [
+        "F2:5B:0C:48:E7:50:9E:B2:C8:DF:1F:84:E7:6C:47:FB:DF:48:14:BB:34:82:D2:E2:45:5D:1D:0D:58:9D:74"
+      ]
+    }
+  }
+]
