@@ -1,11 +1,11 @@
-// Minimal offline-ready service worker
-const NPD_CACHE = 'npd-v1';
+// service-worker.js
+const NPD_CACHE = 'npd-v3'; // bump version
 const PRECACHE_ASSETS = [
-  '/njpourdigital-clean/',
-  '/njpourdigital-clean/index.html',
-  '/njpourdigital-clean/manifest.webmanifest',
-  '/njpourdigital-clean/icon-192.png',
-  '/njpourdigital-clean/icon-512.png'
+  '/',
+  '/index.html',
+  '/manifest.webmanifest',
+  '/icon-192.png',
+  '/icon-512.png'
 ];
 
 self.addEventListener('install', (event) => {
@@ -33,18 +33,18 @@ self.addEventListener('fetch', (event) => {
       try {
         const fresh = await fetch(req);
         const cache = await caches.open(NPD_CACHE);
-        cache.put('/njpourdigital-clean/index.html', fresh.clone());
+        cache.put('/index.html', fresh.clone());
         return fresh;
       } catch {
         const cache = await caches.open(NPD_CACHE);
-        return (await cache.match(req)) || cache.match('/njpourdigital-clean/index.html');
+        return (await cache.match(req)) || cache.match('/index.html');
       }
     })());
     return;
   }
 
   // Static assets: cache-first with background refresh
-  if (['image', 'style', 'script', 'font'].includes(req.destination)) {
+  if (['image','style','script','font'].includes(req.destination)) {
     event.respondWith((async () => {
       const cache = await caches.open(NPD_CACHE);
       const cached = await cache.match(req);
