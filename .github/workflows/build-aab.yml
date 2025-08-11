@@ -89,8 +89,12 @@ jobs:
       - name: Doctor (show paths Bubblewrap sees)
         run: bubblewrap doctor || true
 
-      - name: Build AAB
-        run: bubblewrap build --skipPwaValidation
+            - name: Generate/Update Android project (auto-yes)
+        run: yes | bubblewrap update
+
+      - name: Build AAB (auto-yes)
+        run: yes | bubblewrap build --skipPwaValidation
+
 
       - name: Show SHA-256 for assetlinks.json
         run: keytool -list -v -keystore android.keystore -alias njpwa -storepass changeit123 | grep SHA256 || true
