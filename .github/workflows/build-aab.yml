@@ -63,6 +63,15 @@ jobs:
             }
           }
           EOF
+      - name: Prepare Bubblewrap config (non-interactive)
+        run: |
+          mkdir -p ~/.bubblewrap
+          cat > ~/.bubblewrap/config.json << 'EOF'
+          {
+            "jdkPath": "${JAVA_HOME}",
+            "androidSdkPath": "${ANDROID_SDK_ROOT}"
+          }
+          EOF
 
       - name: Build AAB
         run: bubblewrap build --skipPwaValidation
