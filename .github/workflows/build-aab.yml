@@ -55,7 +55,6 @@ jobs:
           EOF
           echo "JAVA_HOME=$JAVA_HOME"
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          cat ~/.bubblewrap/config.json
 
       - name: Generate signing key (known creds)
         run: |
@@ -94,34 +93,43 @@ jobs:
           }
           EOF
 
-      - name: Generate/Update Android project (auto-yes)
-        run: yes | bubblewrap update
+      # ==== FIX: init if android/ doesn't exist, otherwise update ====
+      - name: Generate or Init Bubblewrap project (auto-yes)
+        run: |
+          if [ -d android ]; then
+            echo "android/ exists → running bubblewrap update"
+            yes | bubblewrap update
+          else
+            echo "android/ missing → running bubblewrap init"
+            yes | bubblewrap init --manifest twa-manifest.json
+          fi
+
+      - name: Verify Android project exists
+        run: |
+          if [ ! -f android/app/build.gradle ]; then
+            echo "ERROR: android/app/build.gradle not found. Bubblewrap project did not generate."
+            ls -la
+            exit 1
+          fi
 
       - name: Show generated files (debug)
         run: |
           pwd
           ls -la
-          echo "--- find gradlew ---"
-          find . -name gradlew -type f
-          echo "--- android/app/build.gradle head ---"
-          sed -n '1,120p' android/app/build.gradle || true
+          echo "--- head of android/app/build.gradle ---"
+          sed -n '1,140p' android/app/build.gradle
 
-      # >>> FIX bad lines in app/build.gradle that break Groovy parser <<<
+      # Patch malformed notification flags that break Groovy parser
       - name: Patch Gradle (normalize notification flags)
         run: |
-          if [ -f android/app/build.gradle ]; then
-            echo "Before patch:"
-            grep -n 'enableNot' android/app/build.gradle || true
-            # Replace any malformed variants like:
-            # enableNotifications: ;  OR  enableNotifications = ;  OR with stray colon
-            sed -i -E 's/enableNotifications[[:space:]]*[:=][[:space:]]*;?/enableNotifications false/g' android/app/build.gradle || true
-            sed -i -E 's/enableNotificationDelegation[[:space:]]*[:=][[:space:]]*;?/enableNotificationDelegation false/g' android/app/build.gradle || true
-            # If the keys exist without values, give them a value
-            sed -i -E 's/enableNotifications[[:space:]]*$/enableNotifications false/g' android/app/build.gradle || true
-            sed -i -E 's/enableNotificationDelegation[[:space:]]*$/enableNotificationDelegation false/g' android/app/build.gradle || true
-            echo "After patch:"
-            grep -n 'enableNot' android/app/build.gradle || true
-          fi
+          echo "Before patch:"
+          grep -n 'enableNot' android/app/build.gradle || true
+          sed -i -E 's/enableNotifications[[:space:]]*[:=][[:space:]]*;?/enableNotifications false/g' android/app/build.gradle
+          sed -i -E 's/enableNotificationDelegation[[:space:]]*[:=][[:space:]]*;?/enableNotificationDelegation false/g' android/app/build.gradle
+          sed -i -E 's/enableNotifications[[:space:]]*$/enableNotifications false/g' android/app/build.gradle
+          sed -i -E 's/enableNotificationDelegation[[:space:]]*$/enableNotificationDelegation false/g' android/app/build.gradle
+          echo "After patch:"
+          grep -n 'enableNot' android/app/build.gradle || true
 
       - name: Build AAB with Gradle (no daemon, more memory)
         timeout-minutes: 30
