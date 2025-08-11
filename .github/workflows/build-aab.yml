@@ -1,0 +1,77 @@
+name: Build Android AAB (One-Click)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Bubblewrap
+        run: npm i -g @bubblewrap/cli
+
+      - name: Generate signing key
+        run: |
+          keytool -genkeypair -v \
+            -keystore android.keystore \
+            -storepass changeit123 \
+            -keypass changeit123 \
+            -alias njpwa \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=NJ Pour Digital, OU=Apps, O=NJ Pour Digital, L=East Brunswick, ST=NJ, C=US"
+
+      - name: Create twa-manifest.json
+        run: |
+          cat > twa-manifest.json << 'EOF'
+          {
+            "packageId": "com.njpourdigital.app.twa",
+            "host": "app.njpourdigital.com",
+            "name": "NJ Pour Digital",
+            "launcherName": "NJP Digital",
+            "display": "standalone",
+            "themeColor": "#0a2540",
+            "backgroundColor": "#0a2540",
+            "startUrl": "/",
+            "iconUrl": "https://app.njpourdigital.com/icon-512.png",
+            "monochromeIconUrl": "https://app.njpourdigital.com/icon-512.png",
+            "navigationColor": "#0a2540",
+            "navigationColorDark": "#0a2540",
+            "appVersionName": "1.0.1",
+            "appVersionCode": 3,
+            "signingKey": {
+              "path": "android.keystore",
+              "alias": "njpwa",
+              "storePassword": "changeit123",
+              "keyPassword": "changeit123"
+            }
+          }
+          EOF
+
+      - name: Build AAB
+        run: bubblewrap build --skipPwaValidation
+
+      - name: Show SHA-256 for assetlinks.json
+        run: keytool -list -v -keystore android.keystore -alias njpwa -storepass changeit123 | grep SHA256 || true
+
+      - name: Upload AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release
+          path: build/app-release.aab
