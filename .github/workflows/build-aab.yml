@@ -25,12 +25,12 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Accept Android licenses + install build-tools
+      - name: Accept licenses + tools
         run: |
           yes | sdkmanager --licenses
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-      - name: Install deps (Bubblewrap + expect)
+      - name: Install Bubblewrap + Expect
         run: |
           sudo apt-get update -y
           sudo apt-get install -y expect
@@ -46,24 +46,28 @@ jobs:
             -keyalg RSA -keysize 2048 -validity 10000 \
             -dname "CN=NJ Pour Digital, OU=Apps, O=NJ Pour Digital, L=East Brunswick, ST=NJ, C=US"
 
-      - name: Non-interactive Bubblewrap init (uses your live manifest)
+      - name: Bubblewrap init (fully non-interactive)
         shell: bash
+        env:
+          MANIFEST_URL: https://raw.githubusercontent.com/pnnondual/njpourdigital-clean/main/manifest.webmanifest
         run: |
-          # RAW URL to your web manifest:
-          MANIFEST_URL="https://raw.githubusercontent.com/pnnondual/njpourdigital-clean/main/manifest.webmanifest"
-
           /usr/bin/expect << 'EOF'
           set timeout -1
-          spawn bubblewrap init --manifest https://raw.githubusercontent.com/pnnondual/njpourdigital-clean/main/manifest.webmanifest
-          # choose theme "Simple (just the right amount of UI)" → option 2
-          send "2\r"
-          # notifications → No
-          send "n\r"
-          # notification delegation → No
-          send "n\r"
-          # accept sane defaults for any remaining prompts
-          for {set i 0} {$i < 20} {incr i} { send "\r" }
-          expect eof
+          # Start init using your live manifest
+          spawn bubblewrap init --manifest $env(MANIFEST_URL)
+
+          # Answer all prompts deterministically
+          expect {
+            -re "Choose a theme" { send "2\r"; exp_continue }                          ;# Simple (just the right amount of UI)
+            -re "Do you want Bubblewrap to install the JDK" { send "n\r"; exp_continue }
+            -re "Enter the path to your JDK" { send "$env(JAVA_HOME)\r"; exp_continue }
+            -re "Do you want Bubblewrap to install the Android SDK" { send "n\r"; exp_continue }
+            -re "Enter the path to your Android SDK" { send "$env(ANDROID_SDK_ROOT)\r"; exp_continue }
+            -re "Enable notifications" { send "n\r"; exp_continue }
+            -re "Enable notification delegation" { send "n\r"; exp_continue }
+            -re "Do you want to create the project" { send "y\r"; exp_continue }
+            eof
+          }
           EOF
 
           test -f android/app/build.gradle || { echo "android project not created"; exit 1; }
