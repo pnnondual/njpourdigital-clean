@@ -57,8 +57,9 @@ jobs:
           include(":app")
           EOF
 
+          # Bump Android Gradle Plugin to 8.6.1 (works with Gradle 8.7)
           cat > android/build.gradle << 'EOF'
-          plugins { id "com.android.application" version "8.5.1" apply false }
+          plugins { id "com.android.application" version "8.6.1" apply false }
           EOF
 
           cat > android/gradle.properties << 'EOF'
@@ -212,14 +213,14 @@ jobs:
           </vector>
           EOF
 
-      - name: Build AAB (uses Gradle wrapper auto-download)
+      - name: Build AAB (Gradle 8.7)
         uses: gradle/gradle-build-action@v3
         with:
-          gradle-version: 8.6
+          gradle-version: 8.7
           build-root-directory: android
           arguments: :app:bundleRelease
 
-      - name: Show SHA-256 (optional reference)
+      - name: Show SHA-256 (optional)
         run: keytool -list -v -keystore android.keystore -alias njpwa -storepass changeit123 | grep SHA256 || true
 
       - name: Upload AAB
