@@ -1,4 +1,4 @@
-name: Build Android AAB (One-Shot)
+name: Android AAB (WebView, No-Bubblewrap)
 
 on:
   workflow_dispatch:
@@ -11,11 +11,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
@@ -25,18 +20,12 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Accept licenses + tools
+      - name: Accept licenses + install tools
         run: |
           yes | sdkmanager --licenses
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-      - name: Install Bubblewrap + Expect
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y expect
-          npm i -g @bubblewrap/cli
-
-      - name: Generate signing key
+      - name: Generate signing key (dev key for now)
         run: |
           keytool -genkeypair -v \
             -keystore android.keystore \
@@ -46,50 +35,191 @@ jobs:
             -keyalg RSA -keysize 2048 -validity 10000 \
             -dname "CN=NJ Pour Digital, OU=Apps, O=NJ Pour Digital, L=East Brunswick, ST=NJ, C=US"
 
-      - name: Bubblewrap init (fully non-interactive)
-        shell: bash
-        env:
-          MANIFEST_URL: https://raw.githubusercontent.com/pnnondual/njpourdigital-clean/main/manifest.webmanifest
+      - name: Create minimal Android WebView project (write files)
         run: |
-          /usr/bin/expect << 'EOF'
-          set timeout -1
-          # Start init using your live manifest
-          spawn bubblewrap init --manifest $env(MANIFEST_URL)
+          APPID="com.njpourdigital.webview"
+          APPNAME="NJ Pour Digital"
+          URL_TO_LOAD="https://app.njpourdigital.com/"
 
-          # Answer all prompts deterministically
-          expect {
-            -re "Choose a theme" { send "2\r"; exp_continue }                          ;# Simple (just the right amount of UI)
-            -re "Do you want Bubblewrap to install the JDK" { send "n\r"; exp_continue }
-            -re "Enter the path to your JDK" { send "$env(JAVA_HOME)\r"; exp_continue }
-            -re "Do you want Bubblewrap to install the Android SDK" { send "n\r"; exp_continue }
-            -re "Enter the path to your Android SDK" { send "$env(ANDROID_SDK_ROOT)\r"; exp_continue }
-            -re "Enable notifications" { send "n\r"; exp_continue }
-            -re "Enable notification delegation" { send "n\r"; exp_continue }
-            -re "Do you want to create the project" { send "y\r"; exp_continue }
-            eof
+          mkdir -p android/app/src/main/java/com/njpourdigital/webview
+          mkdir -p android/app/src/main/res/layout
+          mkdir -p android/app/src/main/res/values
+          mkdir -p android/app/src/main/res/mipmap-anydpi-v26
+          mkdir -p android/app/src/main/res/drawable
+
+          cat > android/settings.gradle << 'EOF'
+          pluginManagement { repositories { gradlePluginPortal(); google(); mavenCentral() } }
+          dependencyResolutionManagement {
+            repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+            repositories { google(); mavenCentral() }
+          }
+          rootProject.name = "NJP Digital"
+          include(":app")
+          EOF
+
+          cat > android/build.gradle << 'EOF'
+          plugins { id "com.android.application" version "8.5.1" apply false }
+          EOF
+
+          cat > android/gradle.properties << 'EOF'
+          org.gradle.jvmargs=-Xmx2g -Dkotlin.daemon.jvm.options=-Xmx1g
+          android.useAndroidX=true
+          android.nonTransitiveRClass=true
+          EOF
+
+          cat > android/app/build.gradle << EOF
+          plugins { id "com.android.application" }
+          android {
+            namespace "${APPID}"
+            compileSdk 34
+            defaultConfig {
+              applicationId "${APPID}"
+              minSdk 21
+              targetSdk 34
+              versionCode 3
+              versionName "1.0.1"
+            }
+            signingConfigs {
+              release {
+                storeFile file("\${rootDir}/../android.keystore")
+                storePassword "changeit123"
+                keyAlias "njpwa"
+                keyPassword "changeit123"
+              }
+            }
+            buildTypes {
+              release {
+                minifyEnabled false
+                signingConfig signingConfigs.release
+              }
+            }
+            compileOptions {
+              sourceCompatibility JavaVersion.VERSION_17
+              targetCompatibility JavaVersion.VERSION_17
+            }
+          }
+          dependencies {
+            implementation "androidx.appcompat:appcompat:1.7.0"
+            implementation "androidx.webkit:webkit:1.11.0"
           }
           EOF
 
-          test -f android/app/build.gradle || { echo "android project not created"; exit 1; }
+          cat > android/app/src/main/AndroidManifest.xml << EOF
+          <manifest package="${APPID}" xmlns:android="http://schemas.android.com/apk/res/android">
+            <uses-permission android:name="android.permission.INTERNET"/>
+            <application
+              android:label="${APPNAME}"
+              android:icon="@mipmap/ic_launcher"
+              android:usesCleartextTraffic="false">
+              <activity
+                android:name=".MainActivity"
+                android:exported="true"
+                android:theme="@style/Theme.App">
+                <intent-filter>
+                  <action android:name="android.intent.action.MAIN"/>
+                  <category android:name="android.intent.category.LAUNCHER"/>
+                </intent-filter>
+              </activity>
+            </application>
+          </manifest>
+          EOF
 
-      - name: Patch Gradle (normalize notification flags)
-        run: |
-          sed -i -E 's/enableNotifications[[:space:]]*[:=][[:space:]]*;?/enableNotifications false/g' android/app/build.gradle || true
-          sed -i -E 's/enableNotificationDelegation[[:space:]]*[:=][[:space:]]*;?/enableNotificationDelegation false/g' android/app/build.gradle || true
-          sed -i -E 's/enableNotifications[[:space:]]*$/enableNotifications false/g' android/app/build.gradle || true
-          sed -i -E 's/enableNotificationDelegation[[:space:]]*$/enableNotificationDelegation false/g' android/app/build.gradle || true
-          echo "---- build.gradle lines ----"
-          grep -n 'enableNot' android/app/build.gradle || true
+          cat > android/app/src/main/java/com/njpourdigital/webview/MainActivity.java << EOF
+          package com.njpourdigital.webview;
 
-      - name: Build AAB (no daemon, more memory)
-        working-directory: android
-        env:
-          GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx2g -Dorg.gradle.daemon=false -Dorg.gradle.console=plain
-        run: |
-          chmod +x ./gradlew || true
-          ./gradlew bundleRelease --stacktrace --warning-mode=all --no-daemon
+          import android.os.Bundle;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          import androidx.appcompat.app.AppCompatActivity;
 
-      - name: Show SHA-256 for assetlinks.json
+          public class MainActivity extends AppCompatActivity {
+              private WebView webView;
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  setContentView(R.layout.activity_main);
+                  webView = findViewById(R.id.webview);
+                  WebSettings s = webView.getSettings();
+                  s.setJavaScriptEnabled(true);
+                  s.setDomStorageEnabled(true);
+                  s.setSupportMultipleWindows(true);
+                  webView.setWebViewClient(new WebViewClient());
+                  webView.loadUrl("${URL_TO_LOAD}");
+              }
+              @Override
+              public void onBackPressed() {
+                  if (webView != null && webView.canGoBack()) webView.goBack();
+                  else super.onBackPressed();
+              }
+          }
+          EOF
+
+          cat > android/app/src/main/res/layout/activity_main.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent">
+            <WebView
+              android:id="@+id/webview"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"/>
+          </FrameLayout>
+          EOF
+
+          cat > android/app/src/main/res/values/strings.xml << EOF
+          <resources><string name="app_name">${APPNAME}</string></resources>
+          EOF
+
+          cat > android/app/src/main/res/values/colors.xml << 'EOF'
+          <resources>
+            <color name="brand">#0A2540</color>
+            <color name="white">#FFFFFF</color>
+          </resources>
+          EOF
+
+          cat > android/app/src/main/res/values/themes.xml << 'EOF'
+          <resources xmlns:tools="http://schemas.android.com/tools">
+            <style name="Theme.App" parent="Theme.Material3.Light.NoActionBar">
+              <item name="colorPrimary">@color/brand</item>
+              <item name="android:statusBarColor">@color/brand</item>
+              <item name="android:navigationBarColor">@color/brand</item>
+            </style>
+          </resources>
+          EOF
+
+          cat > android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+            <background android:drawable="@color/brand"/>
+            <foreground android:drawable="@drawable/ic_launcher_foreground"/>
+          </adaptive-icon>
+          EOF
+
+          cat > android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+            <background android:drawable="@color/brand"/>
+            <foreground android:drawable="@drawable/ic_launcher_foreground"/>
+          </adaptive-icon>
+          EOF
+
+          cat > android/app/src/main/res/drawable/ic_launcher_foreground.xml << 'EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp" android:height="108dp"
+              android:viewportWidth="108" android:viewportHeight="108">
+            <path android:fillColor="#FFFFFF" android:pathData="M24,24h60v60h-60z"/>
+          </vector>
+          EOF
+
+      - name: Build AAB (uses Gradle wrapper auto-download)
+        uses: gradle/gradle-build-action@v3
+        with:
+          gradle-version: 8.6
+          build-root-directory: android
+          arguments: :app:bundleRelease
+
+      - name: Show SHA-256 (optional reference)
         run: keytool -list -v -keystore android.keystore -alias njpwa -storepass changeit123 | grep SHA256 || true
 
       - name: Upload AAB
