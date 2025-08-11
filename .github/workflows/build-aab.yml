@@ -1,4 +1,4 @@
-name: Build Android AAB (One-Click, Gradle Direct)
+name: Build Android AAB (Auto-Detect Gradle or Bubblewrap)
 
 on:
   workflow_dispatch:
@@ -44,7 +44,6 @@ jobs:
       - name: Install Bubblewrap (for project generation)
         run: npm i -g @bubblewrap/cli
 
-      # Write expanded env paths so Bubblewrap never prompts
       - name: Prepare Bubblewrap config (non-interactive)
         run: |
           mkdir -p ~/.bubblewrap
@@ -98,26 +97,35 @@ jobs:
       - name: Generate/Update Android project (auto-yes)
         run: yes | bubblewrap update
 
-      - name: Show generated files
+      - name: Show generated files (debug)
         run: |
           pwd
           ls -la
-          echo "--- android/ ---"
-          ls -la android || true
-          echo "--- android/app ---"
-          ls -la android/app || true
-          echo "--- gradle wrapper ---"
-          ls -la android/gradlew* || true
+          echo "--- find gradlew ---"
+          find . -name gradlew -type f
+          echo "--- tree depth 2 ---"
+          find . -maxdepth 2 -type d -print
 
-      - name: Build AAB with Gradle (no daemon, more memory)
+      - name: Build AAB (auto-detect Gradle; fallback to Bubblewrap)
         timeout-minutes: 30
-        working-directory: android
         env:
           JAVA_OPTS: -Xmx2g
           GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx2g -Dorg.gradle.daemon=false -Dorg.gradle.console=plain
         run: |
-          chmod +x ./gradlew || true
-          ./gradlew bundleRelease --stacktrace --warning-mode=all --no-daemon
+          set -e
+          GRW=$(find . -name gradlew -type f | head -n1 || true)
+          if [ -n "$GRW" ]; then
+            DIR=$(dirname "$GRW")
+            echo "Found gradlew at: $GRW"
+            chmod +x "$GRW" || true
+            (cd "$DIR" && ./gradlew bundleRelease --stacktrace --warning-mode=all --no-daemon)
+            OUT="$DIR/app/build/outputs/bundle/release/app-release.aab"
+          else
+            echo "gradlew not found; falling back to Bubblewrap build"
+            yes | bubblewrap build --skipPwaValidation
+            OUT="build/app-release.aab"
+          fi
+          echo "AAB_OUT=$OUT" >> $GITHUB_ENV
 
       - name: Show SHA-256 for assetlinks.json
         run: keytool -list -v -keystore android.keystore -alias njpwa -storepass changeit123 | grep SHA256 || true
@@ -126,4 +134,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: app-release
-          path: android/app/build/outputs/bundle/release/app-release.aab
+          path: ${{ env.AAB_OUT }}
