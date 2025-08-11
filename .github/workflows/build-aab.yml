@@ -1,4 +1,4 @@
-name: Build Android AAB (Auto-Detect Gradle or Bubblewrap)
+name: Build Android AAB (Auto-Detect + Patch)
 
 on:
   workflow_dispatch:
@@ -103,29 +103,35 @@ jobs:
           ls -la
           echo "--- find gradlew ---"
           find . -name gradlew -type f
-          echo "--- tree depth 2 ---"
-          find . -maxdepth 2 -type d -print
+          echo "--- android/app/build.gradle head ---"
+          sed -n '1,120p' android/app/build.gradle || true
 
-      - name: Build AAB (auto-detect Gradle; fallback to Bubblewrap)
+      # >>> FIX bad lines in app/build.gradle that break Groovy parser <<<
+      - name: Patch Gradle (normalize notification flags)
+        run: |
+          if [ -f android/app/build.gradle ]; then
+            echo "Before patch:"
+            grep -n 'enableNot' android/app/build.gradle || true
+            # Replace any malformed variants like:
+            # enableNotifications: ;  OR  enableNotifications = ;  OR with stray colon
+            sed -i -E 's/enableNotifications[[:space:]]*[:=][[:space:]]*;?/enableNotifications false/g' android/app/build.gradle || true
+            sed -i -E 's/enableNotificationDelegation[[:space:]]*[:=][[:space:]]*;?/enableNotificationDelegation false/g' android/app/build.gradle || true
+            # If the keys exist without values, give them a value
+            sed -i -E 's/enableNotifications[[:space:]]*$/enableNotifications false/g' android/app/build.gradle || true
+            sed -i -E 's/enableNotificationDelegation[[:space:]]*$/enableNotificationDelegation false/g' android/app/build.gradle || true
+            echo "After patch:"
+            grep -n 'enableNot' android/app/build.gradle || true
+          fi
+
+      - name: Build AAB with Gradle (no daemon, more memory)
         timeout-minutes: 30
+        working-directory: android
         env:
           JAVA_OPTS: -Xmx2g
           GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx2g -Dorg.gradle.daemon=false -Dorg.gradle.console=plain
         run: |
-          set -e
-          GRW=$(find . -name gradlew -type f | head -n1 || true)
-          if [ -n "$GRW" ]; then
-            DIR=$(dirname "$GRW")
-            echo "Found gradlew at: $GRW"
-            chmod +x "$GRW" || true
-            (cd "$DIR" && ./gradlew bundleRelease --stacktrace --warning-mode=all --no-daemon)
-            OUT="$DIR/app/build/outputs/bundle/release/app-release.aab"
-          else
-            echo "gradlew not found; falling back to Bubblewrap build"
-            yes | bubblewrap build --skipPwaValidation
-            OUT="build/app-release.aab"
-          fi
-          echo "AAB_OUT=$OUT" >> $GITHUB_ENV
+          chmod +x ./gradlew || true
+          ./gradlew bundleRelease --stacktrace --warning-mode=all --no-daemon
 
       - name: Show SHA-256 for assetlinks.json
         run: keytool -list -v -keystore android.keystore -alias njpwa -storepass changeit123 | grep SHA256 || true
@@ -134,4 +140,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: app-release
-          path: ${{ env.AAB_OUT }}
+          path: android/app/build/outputs/bundle/release/app-release.aab
