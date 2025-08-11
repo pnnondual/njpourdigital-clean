@@ -1,4 +1,4 @@
-name: Build Android AAB (One-Click)
+name: Build Android AAB (One-Click, Gradle Direct)
 
 on:
   workflow_dispatch:
@@ -41,10 +41,9 @@ jobs:
           yes | sdkmanager --licenses
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-      - name: Install Bubblewrap
+      - name: Install Bubblewrap (for project generation only)
         run: npm i -g @bubblewrap/cli
 
-      # Write expanded env paths so Bubblewrap never prompts
       - name: Prepare Bubblewrap config (non-interactive)
         run: |
           mkdir -p ~/.bubblewrap
@@ -58,7 +57,7 @@ jobs:
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
           cat ~/.bubblewrap/config.json
 
-      - name: Generate signing key
+      - name: Generate signing key (known creds)
         run: |
           keytool -genkeypair -v \
             -keystore android.keystore \
@@ -98,15 +97,19 @@ jobs:
       - name: Generate/Update Android project (auto-yes)
         run: yes | bubblewrap update
 
-      - name: Doctor (show paths Bubblewrap sees)
+      - name: Doctor (optional)
         run: bubblewrap doctor || true
 
-      - name: Build AAB (auto-yes, more memory, no daemon)
+      - name: Build AAB with Gradle (no daemon, more memory)
+        timeout-minutes: 25
         env:
           JAVA_OPTS: -Xmx2g
           GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx2g -Dorg.gradle.daemon=false -Dorg.gradle.console=plain
         run: |
-          yes "no" | bubblewrap build --skipPwaValidation
+          # Ensure Gradle wrapper is executable
+          chmod +x ./gradlew || true
+          # Build the bundle directly from the generated Android project
+          yes "no" | ./gradlew -p android bundleRelease --no-daemon --stacktrace --warning-mode=all
 
       - name: Show SHA-256 for assetlinks.json
         run: keytool -list -v -keystore android.keystore -alias njpwa -storepass changeit123 | grep SHA256 || true
@@ -115,4 +118,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: app-release
-          path: build/app-release.aab
+          path: android/app/build/outputs/bundle/release/app-release.aab
