@@ -6,6 +6,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,16 +23,25 @@ jobs:
           java-version: "17"
 
       - name: Setup Android SDK
-           - name: Install Android SDK components
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK components
         run: |
           yes | sdkmanager --licenses
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-        
-        uses: android-actions/setup-android@v3
-
       - name: Install Bubblewrap
         run: npm i -g @bubblewrap/cli
+
+      - name: Prepare Bubblewrap config (non-interactive)
+        run: |
+          mkdir -p ~/.bubblewrap
+          cat > ~/.bubblewrap/config.json << 'EOF'
+          {
+            "jdkPath": "${JAVA_HOME}",
+            "androidSdkPath": "${ANDROID_SDK_ROOT}"
+          }
+          EOF
 
       - name: Generate signing key
         run: |
@@ -67,15 +77,6 @@ jobs:
               "storePassword": "changeit123",
               "keyPassword": "changeit123"
             }
-          }
-          EOF
-      - name: Prepare Bubblewrap config (non-interactive)
-        run: |
-          mkdir -p ~/.bubblewrap
-          cat > ~/.bubblewrap/config.json << 'EOF'
-          {
-            "jdkPath": "${JAVA_HOME}",
-            "androidSdkPath": "${ANDROID_SDK_ROOT}"
           }
           EOF
 
