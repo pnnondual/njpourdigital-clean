@@ -41,9 +41,10 @@ jobs:
           yes | sdkmanager --licenses
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-      - name: Install Bubblewrap (for project generation only)
+      - name: Install Bubblewrap (for project generation)
         run: npm i -g @bubblewrap/cli
 
+      # Write expanded env paths so Bubblewrap never prompts
       - name: Prepare Bubblewrap config (non-interactive)
         run: |
           mkdir -p ~/.bubblewrap
@@ -97,19 +98,26 @@ jobs:
       - name: Generate/Update Android project (auto-yes)
         run: yes | bubblewrap update
 
-      - name: Doctor (optional)
-        run: bubblewrap doctor || true
+      - name: Show generated files
+        run: |
+          pwd
+          ls -la
+          echo "--- android/ ---"
+          ls -la android || true
+          echo "--- android/app ---"
+          ls -la android/app || true
+          echo "--- gradle wrapper ---"
+          ls -la android/gradlew* || true
 
       - name: Build AAB with Gradle (no daemon, more memory)
-        timeout-minutes: 25
+        timeout-minutes: 30
+        working-directory: android
         env:
           JAVA_OPTS: -Xmx2g
           GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx2g -Dorg.gradle.daemon=false -Dorg.gradle.console=plain
         run: |
-          # Ensure Gradle wrapper is executable
           chmod +x ./gradlew || true
-          # Build the bundle directly from the generated Android project
-          yes "no" | ./gradlew -p android bundleRelease --no-daemon --stacktrace --warning-mode=all
+          ./gradlew bundleRelease --stacktrace --warning-mode=all --no-daemon
 
       - name: Show SHA-256 for assetlinks.json
         run: keytool -list -v -keystore android.keystore -alias njpwa -storepass changeit123 | grep SHA256 || true
