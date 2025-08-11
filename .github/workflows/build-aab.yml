@@ -1,4 +1,4 @@
-name: Build Android AAB (Auto-Detect + Patch)
+name: Build Android AAB (One-Shot)
 
 on:
   workflow_dispatch:
@@ -25,38 +25,18 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Cache Gradle
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            ~/.android/build-cache
-          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            gradle-${{ runner.os }}-
-
-      - name: Install Android SDK components
+      - name: Accept Android licenses + install build-tools
         run: |
           yes | sdkmanager --licenses
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-      - name: Install Bubblewrap (for project generation)
-        run: npm i -g @bubblewrap/cli
-
-      - name: Prepare Bubblewrap config (non-interactive)
+      - name: Install deps (Bubblewrap + expect)
         run: |
-          mkdir -p ~/.bubblewrap
-          cat > ~/.bubblewrap/config.json << EOF
-          {
-            "jdkPath": "$JAVA_HOME",
-            "androidSdkPath": "$ANDROID_SDK_ROOT"
-          }
-          EOF
-          echo "JAVA_HOME=$JAVA_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          sudo apt-get update -y
+          sudo apt-get install -y expect
+          npm i -g @bubblewrap/cli
 
-      - name: Generate signing key (known creds)
+      - name: Generate signing key
         run: |
           keytool -genkeypair -v \
             -keystore android.keystore \
@@ -66,76 +46,40 @@ jobs:
             -keyalg RSA -keysize 2048 -validity 10000 \
             -dname "CN=NJ Pour Digital, OU=Apps, O=NJ Pour Digital, L=East Brunswick, ST=NJ, C=US"
 
-      - name: Create twa-manifest.json
+      - name: Non-interactive Bubblewrap init (uses your live manifest)
+        shell: bash
         run: |
-          cat > twa-manifest.json << 'EOF'
-          {
-            "packageId": "com.njpourdigital.app.twa",
-            "host": "app.njpourdigital.com",
-            "name": "NJ Pour Digital",
-            "launcherName": "NJP Digital",
-            "display": "standalone",
-            "themeColor": "#0a2540",
-            "backgroundColor": "#0a2540",
-            "startUrl": "/",
-            "iconUrl": "https://app.njpourdigital.com/icon-512.png",
-            "monochromeIconUrl": "https://app.njpourdigital.com/icon-512.png",
-            "navigationColor": "#0a2540",
-            "navigationColorDark": "#0a2540",
-            "appVersionName": "1.0.1",
-            "appVersionCode": 3,
-            "signingKey": {
-              "path": "android.keystore",
-              "alias": "njpwa",
-              "storePassword": "changeit123",
-              "keyPassword": "changeit123"
-            }
-          }
+          # RAW URL to your web manifest:
+          MANIFEST_URL="https://raw.githubusercontent.com/pnnondual/njpourdigital-clean/main/manifest.webmanifest"
+
+          /usr/bin/expect << 'EOF'
+          set timeout -1
+          spawn bubblewrap init --manifest https://raw.githubusercontent.com/pnnondual/njpourdigital-clean/main/manifest.webmanifest
+          # choose theme "Simple (just the right amount of UI)" → option 2
+          send "2\r"
+          # notifications → No
+          send "n\r"
+          # notification delegation → No
+          send "n\r"
+          # accept sane defaults for any remaining prompts
+          for {set i 0} {$i < 20} {incr i} { send "\r" }
+          expect eof
           EOF
 
-      # ==== FIX: init if android/ doesn't exist, otherwise update ====
-      - name: Generate or Init Bubblewrap project (auto-yes)
-        run: |
-          if [ -d android ]; then
-            echo "android/ exists → running bubblewrap update"
-            yes | bubblewrap update
-          else
-            echo "android/ missing → running bubblewrap init"
-            yes | bubblewrap init --manifest twa-manifest.json
-          fi
+          test -f android/app/build.gradle || { echo "android project not created"; exit 1; }
 
-      - name: Verify Android project exists
-        run: |
-          if [ ! -f android/app/build.gradle ]; then
-            echo "ERROR: android/app/build.gradle not found. Bubblewrap project did not generate."
-            ls -la
-            exit 1
-          fi
-
-      - name: Show generated files (debug)
-        run: |
-          pwd
-          ls -la
-          echo "--- head of android/app/build.gradle ---"
-          sed -n '1,140p' android/app/build.gradle
-
-      # Patch malformed notification flags that break Groovy parser
       - name: Patch Gradle (normalize notification flags)
         run: |
-          echo "Before patch:"
-          grep -n 'enableNot' android/app/build.gradle || true
-          sed -i -E 's/enableNotifications[[:space:]]*[:=][[:space:]]*;?/enableNotifications false/g' android/app/build.gradle
-          sed -i -E 's/enableNotificationDelegation[[:space:]]*[:=][[:space:]]*;?/enableNotificationDelegation false/g' android/app/build.gradle
-          sed -i -E 's/enableNotifications[[:space:]]*$/enableNotifications false/g' android/app/build.gradle
-          sed -i -E 's/enableNotificationDelegation[[:space:]]*$/enableNotificationDelegation false/g' android/app/build.gradle
-          echo "After patch:"
+          sed -i -E 's/enableNotifications[[:space:]]*[:=][[:space:]]*;?/enableNotifications false/g' android/app/build.gradle || true
+          sed -i -E 's/enableNotificationDelegation[[:space:]]*[:=][[:space:]]*;?/enableNotificationDelegation false/g' android/app/build.gradle || true
+          sed -i -E 's/enableNotifications[[:space:]]*$/enableNotifications false/g' android/app/build.gradle || true
+          sed -i -E 's/enableNotificationDelegation[[:space:]]*$/enableNotificationDelegation false/g' android/app/build.gradle || true
+          echo "---- build.gradle lines ----"
           grep -n 'enableNot' android/app/build.gradle || true
 
-      - name: Build AAB with Gradle (no daemon, more memory)
-        timeout-minutes: 30
+      - name: Build AAB (no daemon, more memory)
         working-directory: android
         env:
-          JAVA_OPTS: -Xmx2g
           GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx2g -Dorg.gradle.daemon=false -Dorg.gradle.console=plain
         run: |
           chmod +x ./gradlew || true
